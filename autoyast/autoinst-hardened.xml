@@ -1,0 +1,202 @@
+<?xml version="1.0"?>
+<!DOCTYPE profile>
+<!--
+  autoinst-hardened.reconciled.xml — SLES 15 SP7, STIG-hardened, RKE2 FIPS-first.
+  ============================================================================
+  = the PROVEN validation profile (sles-provision/autoinst.template.xml — tested
+    in August: registration, root password + ECDSA-key injection, RKE2 install,
+    the openinfra-fips.service one-shot with FIPS-FIRST ordering)
+  + the STIG hardening from the tonight-brief's autoinst-hardened.xml (separate
+    partitions with nodev/nosuid, /var NOT noexec; SSH ciphers/MACs/kex; PAM
+    password policy; auditd; certified crypto RPM version-locks).
+
+  ORDER MATTERS in the post-script: the ECDSA key is injected BEFORE
+  `PasswordAuthentication no` is set, and a root password is also set — so there
+  is NO lockout window (the OptiPlex has no BMC). Delivered via the proven
+  2-fire-node.sh (kexec-via-pod), NOT grub-reboot.
+
+  ⚠ VERIFY every element against the SLES 15 SP7 AutoYaST schema before an
+    unattended run. Fill @@…@@ via inject-regcode.sh / render.sh; fill the
+    certified crypto RPM list + versions from suse.com/support/security/certifications.
+-->
+<profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
+  <general>
+    <mode>
+      <confirm config:type="boolean">false</confirm>
+      <final_reboot config:type="boolean">true</final_reboot>
+    </mode>
+  </general>
+  <networking>
+    <keep_install_network config:type="boolean">true</keep_install_network>
+    <dns><hostname>@@HOSTNAME@@</hostname></dns>
+  </networking>
+  <timezone><timezone>UTC</timezone></timezone>
+  <language><language>en_US</language></language>
+  <keyboard><keymap>english-us</keymap></keyboard>
+
+  <!-- STIG partition layout (from the brief). /dev/sda = the SATA node 2. /var is nodev,nosuid but
+       NOT noexec — containerd/kubelet/Longhorn execute under it (the load-bearing tailoring exception). -->
+  <partitioning config:type="list">
+    <drive>
+      <device>/dev/sda</device>
+      <initialize config:type="boolean">true</initialize>
+      <use>all</use>
+      <partitions config:type="list">
+        <partition><mount>/boot/efi</mount><size>512M</size><filesystem config:type="symbol">vfat</filesystem></partition>
+        <partition><mount>/boot</mount><size>1G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid,noexec</fstab_options></partition>
+        <partition><mount>/</mount><size>40G</size><filesystem config:type="symbol">ext4</filesystem></partition>
+        <partition><mount>/var</mount><size>120G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid</fstab_options></partition>
+        <partition><mount>/var/log</mount><size>15G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid,noexec</fstab_options></partition>
+        <partition><mount>/var/log/audit</mount><size>10G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid,noexec</fstab_options></partition>
+        <partition><mount>/var/tmp</mount><size>5G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid,noexec</fstab_options></partition>
+        <partition><mount>/tmp</mount><size>5G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid,noexec</fstab_options></partition>
+        <partition><mount>/home</mount><size>5G</size><filesystem config:type="symbol">ext4</filesystem><fstab_options>nodev,nosuid</fstab_options></partition>
+        <partition><mount>swap</mount><size>2G</size><filesystem config:type="symbol">swap</filesystem></partition>
+      </partitions>
+    </drive>
+  </partitioning>
+
+  <!-- Registration (proven — 4 modules incl. Certifications for the FIPS crypto RPMs). -->
+  <suse_register>
+    <do_registration config:type="boolean">true</do_registration>
+    <email>@@REG_EMAIL@@</email>
+    <reg_code>@@REG_CODE@@</reg_code>
+    <install_updates config:type="boolean">true</install_updates>
+    <addons config:type="list">
+      <addon><name>sle-module-basesystem</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-server-applications</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-containers</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-certifications</name><version>15.7</version><arch>x86_64</arch></addon>
+    </addons>
+  </suse_register>
+
+  <!-- Proven package set + FIPS packages at install (the one-shot needs no zypper on first boot) +
+       audit. install_recommended false for attack-surface minimization. -->
+  <software>
+    <install_recommended config:type="boolean">false</install_recommended>
+    <products config:type="list"><product>SLES</product></products>
+    <patterns config:type="list">
+      <pattern>base</pattern>
+      <pattern>enhanced_base</pattern>
+    </patterns>
+    <packages config:type="list">
+      <package>autoyast2</package>
+      <package>autoyast2-installation</package>
+      <package>kexec-tools</package>
+      <package>curl</package>
+      <package>chrony</package>
+      <package>open-iscsi</package>
+      <package>nfs-client</package>
+      <package>audit</package>
+      <package>patterns-base-fips</package>
+      <package>crypto-policies-scripts</package>
+      <package>dracut-fips</package>
+    </packages>
+  </software>
+
+  <!-- Root password (belt) so injecting the key + PasswordAuthentication no can't lock the box out. -->
+  <users config:type="list">
+    <user>
+      <username>root</username>
+      <user_password>@@ROOT_PW_HASH@@</user_password>
+      <encrypted config:type="boolean">true</encrypted>
+    </user>
+  </users>
+
+  <!-- STIG login/password policy (declarative; VERIFY element names on SP7). -->
+  <security>
+    <pass_max_days>60</pass_max_days>
+    <pass_min_days>1</pass_min_days>
+    <pass_min_len>15</pass_min_len>
+    <pass_warn_age>7</pass_warn_age>
+    <passwd_encryption>sha512</passwd_encryption>
+    <fail_delay>4</fail_delay>
+  </security>
+
+  <services-manager>
+    <default_target>multi-user</default_target>
+    <services>
+      <enable config:type="list">
+        <service>sshd</service>
+        <service>auditd</service>
+        <service>chronyd</service>
+      </enable>
+    </services>
+  </services-manager>
+
+  <!-- One ordered post-script (network up): key FIRST, then hardening, then RKE2 + FIPS one-shot. -->
+  <scripts>
+    <post-scripts config:type="list">
+      <script>
+        <filename>openinfra-hardened.sh</filename>
+        <interpreter>shell</interpreter>
+        <source><![CDATA[#!/bin/bash
+set -x
+exec >>/var/log/openinfra-provision.log 2>&1
+echo "=== openinfra hardened provision $(date -u) on @@HOSTNAME@@ ==="
+
+# --- 1. SSH access FIRST (before any PasswordAuthentication no). FIPS disables Ed25519 -> ECDSA key. ---
+mkdir -p /root/.ssh; chmod 700 /root/.ssh
+echo '@@SSH_PUBKEY@@' > /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys
+systemctl enable sshd chronyd auditd || true
+systemctl disable --now firewalld 2>/dev/null || true   # SLE15 firewalld blocks RKE2/Canal ports
+
+# --- 2. STIG SSH hardening (safe now: key is in place + root password set). ---
+cfg=/etc/ssh/sshd_config
+{
+  echo "PermitRootLogin prohibit-password"    # key-only root (not 'no' — root IS the access account here)
+  echo "PasswordAuthentication no"
+  echo "ClientAliveInterval 600"
+  echo "ClientAliveCountMax 0"
+  echo "X11Forwarding no"
+  echo "Ciphers aes256-gcm@openssh.com,aes256-ctr,aes128-gcm@openssh.com,aes128-ctr"
+  echo "MACs hmac-sha2-512,hmac-sha2-256"
+  echo "KexAlgorithms ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group16-sha512"
+} >> "$cfg"
+
+# --- 3. auditd STIG starter ruleset (/var/log/audit is its own sized partition). ---
+cat > /etc/audit/rules.d/stig.rules <<'RULES'
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/sudoers -p wa -k privilege
+-w /var/log/audit -p wa -k auditlog
+-a always,exit -F arch=b64 -S execve -F euid=0 -k rootcmd
+RULES
+
+# --- 4. Certified crypto RPM version-locks (anti-drift). FILL from suse.com/certifications; do NOT guess. ---
+# zypper in -f libopenssl-3-fips-provider-<CERTIFIED-VERSION> || true
+# for pkg in libopenssl-3-fips-provider <ADD-EACH-CERTIFIED-RPM>; do zypper addlock "$pkg" || true; done
+
+# --- 5. RKE2 (installed, NOT enabled — the one-shot enables it after the fips=1 reboot). ---
+mkdir -p /etc/rancher/rke2
+cat >/etc/rancher/rke2/config.yaml <<CFG
+token: @@RKE2_TOKEN@@
+@@SERVER_LINE@@
+node-label:
+  - "openinfra.dev/chaos=true"
+write-kubeconfig-mode: "0644"
+CFG
+curl -sfL https://get.rke2.io -o /root/get-rke2.sh && sh /root/get-rke2.sh
+
+# --- 6. FIPS-FIRST one-shot: enable FIPS + enable rke2, then reboot into fips=1. ---
+#     [Install] WantedBy is REQUIRED (its absence was the cn1-recovery bug).
+cat >/etc/systemd/system/openinfra-fips.service <<'UNIT'
+[Unit]
+Description=openinfra one-shot: enable FIPS + enable rke2, then reboot into fips=1
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/openinfra-fips.done
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'fips-mode-setup --enable && systemctl enable rke2-server.service && touch /var/lib/openinfra-fips.done && systemctl disable openinfra-fips.service && systemctl reboot'
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl enable openinfra-fips.service
+echo "=== hardened provision done (boot1: FIPS+rke2 enable then reboot; boot2: rke2 joins under fips=1) ==="
+]]></source>
+      </script>
+    </post-scripts>
+  </scripts>
+</profile>

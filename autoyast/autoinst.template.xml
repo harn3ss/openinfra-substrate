@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<!DOCTYPE profile>
+<profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
+  <general>
+    <mode>
+      <confirm config:type="boolean">false</confirm>
+      <final_reboot config:type="boolean">true</final_reboot>
+    </mode>
+  </general>
+  <networking>
+    <keep_install_network config:type="boolean">true</keep_install_network>
+    <dns><hostname>@@HOSTNAME@@</hostname></dns>
+  </networking>
+  <timezone><timezone>UTC</timezone></timezone>
+  <language><language>en_US</language></language>
+  <keyboard><keymap>english-us</keymap></keyboard>
+  <partitioning config:type="list">
+    <drive>
+      <device>/dev/sda</device>
+      <initialize config:type="boolean">true</initialize>
+      <use>all</use>
+    </drive>
+  </partitioning>
+  <suse_register>
+    <do_registration config:type="boolean">true</do_registration>
+    <email>@@REG_EMAIL@@</email>
+    <reg_code>@@REG_CODE@@</reg_code>
+    <install_updates config:type="boolean">true</install_updates>
+    <addons config:type="list">
+      <addon><name>sle-module-basesystem</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-server-applications</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-containers</name><version>15.7</version><arch>x86_64</arch></addon>
+      <addon><name>sle-module-certifications</name><version>15.7</version><arch>x86_64</arch></addon>
+    </addons>
+  </suse_register>
+  <software>
+    <products config:type="list">
+      <product>SLES</product>
+    </products>
+    <patterns config:type="list">
+      <pattern>base</pattern>
+      <pattern>enhanced_base</pattern>
+    </patterns>
+    <packages config:type="list">
+      <package>autoyast2</package>
+      <package>autoyast2-installation</package>
+      <package>kexec-tools</package>
+      <package>curl</package>
+      <package>chrony</package>
+      <package>open-iscsi</package>
+      <package>nfs-client</package>
+      <package>patterns-base-fips</package>
+      <package>crypto-policies-scripts</package>
+      <package>dracut-fips</package>
+    </packages>
+  </software>
+  <users config:type="list">
+    <user>
+      <username>root</username>
+      <user_password>@@ROOT_PW_HASH@@</user_password>
+      <encrypted config:type="boolean">true</encrypted>
+    </user>
+  </users>
+  <scripts>
+    <post-scripts config:type="list">
+      <script>
+        <filename>openinfra.sh</filename>
+        <interpreter>shell</interpreter>
+        <source><![CDATA[#!/bin/bash
+set -x
+exec >>/var/log/openinfra-provision.log 2>&1
+echo "=== openinfra provision $(date -u) on @@HOSTNAME@@ ==="
+# root SSH key (done here, not in <users>, to avoid schema risk)
+mkdir -p /root/.ssh; chmod 700 /root/.ssh
+echo '@@SSH_PUBKEY@@' > /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys
+systemctl enable sshd chronyd || true
+systemctl disable --now firewalld 2>/dev/null || true   # SLE15 firewalld blocks RKE2/Canal ports (appendix D5)
+# RKE2 (server)
+mkdir -p /etc/rancher/rke2
+cat >/etc/rancher/rke2/config.yaml <<CFG
+token: @@RKE2_TOKEN@@
+@@SERVER_LINE@@
+node-label:
+  - "openinfra.dev/chaos=true"
+write-kubeconfig-mode: "0644"
+CFG
+curl -sfL https://get.rke2.io -o /root/get-rke2.sh && sh /root/get-rke2.sh
+# NOTE: rke2-server is deliberately NOT enabled here. The FIPS one-shot below enables it, so rke2 only
+# ever starts (and joins etcd) AFTER the fips=1 reboot — i.e. FIPS-FIRST. Starting rke2 pre-FIPS and
+# rebooting an etcd member for FIPS afterwards breaks etcd quorum on multi-server joins (learned the
+# hard way). FIPS packages are installed at main-install time via <software><packages> so the one-shot
+# needs no zypper (which YaST holds locked on first boot). NOTE: FIPS mode disables Ed25519 for SSH, so
+# the injected authorized key is ECDSA (nistp256, FIPS-approved) — see render.sh. (Version-locking to
+# the FIPS-validated RPM builds is a deliberate follow-on, runbook Step 4.)
+cat >/etc/systemd/system/openinfra-fips.service <<'UNIT'
+[Unit]
+Description=openinfra one-shot: enable FIPS + enable rke2, then reboot into fips=1
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/openinfra-fips.done
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'fips-mode-setup --enable && systemctl enable rke2-server.service && touch /var/lib/openinfra-fips.done && systemctl disable openinfra-fips.service && systemctl reboot'
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl enable openinfra-fips.service
+echo "=== provision done (boot1: enable FIPS+rke2 then reboot; boot2: rke2 joins under fips=1) ==="
+]]></source>
+      </script>
+    </post-scripts>
+  </scripts>
+</profile>

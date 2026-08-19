@@ -1,0 +1,16 @@
+# NEVER commit secrets or site-specifics to this PUBLIC repo.
+# Rendered per-node profiles carry the injected eval registration code:
+autoinst-cn*.xml
+*-rendered.xml
+# Keys / credentials:
+*ecdsa*
+*_rsa*
+*.pem
+*.key
+id_*
+.env
+.env.*
+evidence/
+# Editor / OS cruft:
+*.swp
+.DS_Store
