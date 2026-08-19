@@ -49,6 +49,10 @@ Find a freshly-installed node's IP by its new `:22` (`nmap -p22 --open <subnet>`
   policy, auditd rules, and certified-crypto RPM version-locks. The SSH key is injected **before**
   `PasswordAuthentication no`, so there is no lockout window.
 
+For the STIG posture itself — the measured **63 → 196** pass delta, the generate/strip/apply/reboot
+remediation method, and why to **harden at install rather than in place** on headless hardware — see
+[stig-hardening.md](stig-hardening.md).
+
 ## FIPS — the maintained-state part
 
 FIPS on SLES is two things: **turn on FIPS mode**, and **install + lock the certified modules**.

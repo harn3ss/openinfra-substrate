@@ -63,13 +63,20 @@ an **acknowledged open finding**, not an exception — name it and move on.
 
 ---
 
-## How this maps to tonight's delta
+## How this maps to the measured delta
 
-- **as-provisioned baseline:** ~63/154 (reconfirm in-session before remediating).
-- **after AutoYaST-hardened build (node 2):** Category D green from install;
-  Category C present as documented exceptions; Category A/B enforced only where
-  safe.
-- **after remediation on node 3:** same target, reached the other way, with an
-  honest before/after delta because node 3 started unhardened.
-- **target:** ~200/217 passing, ~15 documented exceptions (this file), **zero
-  undocumented failures**. Reboot-then-rescan or the number doesn't count.
+The measured before/after — as-provisioned **63/154** pass/fail → after remediation **196/23** over the
+241 selected rules — is in [stig-hardening.md](stig-hardening.md), with the remediation method and a full
+accounting of the 23 remaining failures. Every one falls into a named bucket:
+
+- **Category A/B/C exceptions (this file):** the network sysctls, `firewalld`, and the `/var`/`/home`
+  mount options above — must stay non-compliant or the cluster breaks; each carries a compensating
+  control. These are the bulk of the deliberate remaining failures.
+- **Build-time items:** disk encryption and the separate audit partition are provisioned by the hardened
+  AutoYaST profile, not by in-place remediation; a bootloader password is a conscious decline on
+  headless hardware.
+- **A handful of minor open findings** (unowned container-UID files, existing-account aging) — named,
+  not hidden.
+
+The posture that matters: **documented exceptions + named open findings, zero *undocumented* failures**,
+and the number only counts **after reboot-then-rescan**.

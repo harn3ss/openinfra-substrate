@@ -22,6 +22,7 @@ autoyast/       the profiles
   autoinst-hardened.xml  the same + STIG hardening (partitions, SSH/PAM/auditd, crypto locks)
 docs/
   runbook.md                    the full method, FIPS maintained-state, the honest claim
+  stig-hardening.md             the measured 63→196 delta, the remediation method, harden-at-install
   stig-tailoring-exceptions.md  the k8s-vs-STIG conflicts, each with a compensating control
 ```
 
