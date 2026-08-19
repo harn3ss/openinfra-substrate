@@ -56,10 +56,26 @@ why they're exceptions *by design* rather than remediation targets.
 ## Category D — everything else
 
 The large majority of STIG rules have no Kubernetes conflict and are simply
-**fixed** — login.defs/PAM password policy, SSH ciphers/MACs/kex, auditd rules,
-package minimization, banner, FIPS mode. These are set in the AutoYaST profile
-and should scan green. Anything in this category that still fails post-build is
-an **acknowledged open finding**, not an exception — name it and move on.
+**fixed** — login.defs/PAM password policy, auditd rules, package minimization,
+banner, FIPS mode. These are set in the AutoYaST profile and should scan green.
+Anything in this category that still fails post-build is an **acknowledged open
+finding**, not an exception — name it and move on.
+
+---
+
+## Category E — FIPS vs STIG (crypto ordering)
+
+Not a Kubernetes conflict — a conflict between two hardening regimes on the same
+box. Under **FIPS mode the system crypto-policy governs** the effective SSH
+cipher/MAC/KEX set, which does **not** match the STIG's *exact ordered* list.
+
+| STIG rule (class) | STIG wants | Conflict | Verdict | Compensating control |
+|---|---|---|---|---|
+| `sshd_use_approved_ciphers/macs/kex_ordered_stig` | an exact ordered list incl. GCM | FIPS crypto-policy sets `aes*-ctr` / `hmac-sha2-*` / `ecdh-*` (no GCM) and its own order; `sshd -T` reflects the policy, not `sshd_config` | **Exception (FIPS wins)** | Running FIPS-validated crypto is the stronger control; the box is *more* constrained, it just fails the literal ordered-match. Document the effective `sshd -T` crypto alongside the finding |
+
+> These fail both before **and** after reboot — they are not a "settles on reboot"
+> artifact. If you must satisfy the ordered-cipher rule literally, you are choosing
+> the STIG list *over* the FIPS policy; on a FIPS substrate, keep FIPS.
 
 ---
 
