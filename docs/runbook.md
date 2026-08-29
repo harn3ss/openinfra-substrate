@@ -67,12 +67,22 @@ FIPS on SLES is two things: **turn on FIPS mode**, and **install + lock the cert
 - **Version-lock the certified crypto RPMs** (`zypper addlock`) at their exact certified versions. This
   is *why* certification is a maintained state: an unpinned `zypper up` can replace a certified binary
   with a newer uncertified one and silently drop the box out of the evaluated configuration.
+  **Provenance note (2026-08-15 reference run):** that run locked the **stock SP7** builds — the
+  `<CERTIFIED-VERSION>` install step is a commented placeholder that was **not** filled in, so the 11
+  pins are the running SP7 config, **not** the CMVP-certified module builds. That demonstrated FIPS
+  *mode*, not certified-module versions. A certified-module claim requires installing SUSE's
+  SP6-certified modules first (they ship for install on SP7 — see the note below) and locking **those**
+  exact versions.
 
-> SLES 15 **SP7 was submitted for Common Criteria but not for FIPS 140-3**; the FIPS modules trace to
-> the **SP6** CMVP work, delivered into SP7. Which SP holds which live certificate is a maintained-state
-> fact — **verify on `suse.com/support/security/certifications` before making any claim.** RKE2 carries
-> FIPS at the Kubernetes crypto layer (the normal Linux/AMD64 artifacts are FIPS-built; there is **no
-> separate `-fips` channel**), and its default **Canal** CNI is the only one rebuilt for FIPS.
+> SLES 15 **SP7 was submitted for Common Criteria but not for FIPS 140-3**; the FIPS 140-3 modules are
+> validated against **SP6** — but SUSE **publishes those SP6-certified modules for installation on SP7**
+> (SUSE article: "Installing FIPS certified packages on SLES 15 SP6 and SP7"), so the certified path is
+> **SP7 running the SP6-certified modules — no downgrade required.** The FIPS 140-3 certificates cover
+> all four SLE 15 architectures including **aarch64**, so this is a **package-provenance** question, not
+> a service-pack or architecture one. **Verify exact cert numbers + versions on
+> `suse.com/support/security/certifications` before any claim.** RKE2 carries FIPS at the Kubernetes
+> crypto layer (the normal Linux/AMD64 artifacts are FIPS-built; there is **no separate `-fips` channel**),
+> and its default **Canal** CNI is the only one rebuilt for FIPS.
 
 ## RKE2 notes
 
