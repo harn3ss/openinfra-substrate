@@ -163,9 +163,22 @@ cat > /etc/audit/rules.d/stig.rules <<'RULES'
 -a always,exit -F arch=b64 -S execve -F euid=0 -k rootcmd
 RULES
 
-# --- 4. Certified crypto RPM version-locks (anti-drift). FILL from suse.com/certifications; do NOT guess. ---
-# zypper in -f libopenssl-3-fips-provider-<CERTIFIED-VERSION> || true
-# for pkg in libopenssl-3-fips-provider <ADD-EACH-CERTIFIED-RPM>; do zypper addlock "$pkg" || true; done
+# --- 4. Install + lock the SP6-CERTIFIED crypto modules from the Certifications Module.
+#        Validated 2026-08-28 on SP7 aarch64 (Graviton): these exact versions install and the OpenSSL FIPS
+#        provider goes ACTIVE. RE-VERIFY vs `zypper se -s -r SLE-Module-Certifications-15-SP7-Updates`
+#        before an evaluation (SUSE ships updates). The certified builds are LOWER-versioned than stock SP7,
+#        so -f + --allow-downgrade is required, else a plain install keeps the uncertified SP7 build.
+#        If YaST still holds the zypper lock here, move this block to the second-boot openinfra-fips
+#        one-shot (verify on the next real provision). ---
+zypper --non-interactive in -f --oldpackage --allow-downgrade \
+  libopenssl-3-fips-provider=3.1.4-150600.5.15.1 \
+  libopenssl1_1=1.1.1w-150600.5.12.2 \
+  libgcrypt20=1.10.3-150600.3.6.1 libgnutls30=3.8.3-150600.4.6.2 \
+  libhogweed6=3.9.1-150600.3.2.1 libnettle8=3.9.1-150600.3.2.1 \
+  libfreebl3=3.101.2-150400.3.54.1 libsoftokn3=3.101.2-150400.3.54.1 \
+  mozilla-nss=3.101.2-150400.3.54.1 || true
+for pkg in libopenssl-3-fips-provider libopenssl1_1 libgcrypt20 libgnutls30 \
+           libhogweed6 libnettle8 libfreebl3 libsoftokn3 mozilla-nss; do zypper addlock "$pkg" || true; done
 
 # --- 5. RKE2 (installed, NOT enabled — the one-shot enables it after the fips=1 reboot). ---
 mkdir -p /etc/rancher/rke2

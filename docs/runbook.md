@@ -57,8 +57,11 @@ remediation method, and why to **harden at install rather than in place** on hea
 
 FIPS on SLES is two things: **turn on FIPS mode**, and **install + lock the certified modules**.
 
-- FIPS packages (`patterns-base-fips`, `dracut-fips`, `crypto-policies-scripts`) are installed at
-  main-install time, so the first-boot one-shot needs no `zypper` (YaST holds it locked on first boot).
+- FIPS **enablement** packages are installed at main-install time so the first-boot one-shot needs no
+  `zypper` (YaST holds it locked on first boot): `patterns-base-fips`, `dracut-fips`, **and
+  `crypto-policies-scripts` EXPLICITLY** — the pattern does NOT pull `crypto-policies-scripts`, and that
+  is the package that provides `fips-mode-setup` on SLES 15 (proven on the 2026-08-28 arm64 run: without
+  it, `fips-mode-setup: command not found`, even with `patterns-base-fips` installed).
 - The **`openinfra-fips.service` one-shot** runs on first boot: `fips-mode-setup --enable`, enable
   `rke2-server`, then reboot into `fips=1`. RKE2 therefore only ever starts — and joins etcd — **under
   FIPS**. Starting RKE2 pre-FIPS and rebooting an etcd member for FIPS afterward breaks quorum on
@@ -77,12 +80,43 @@ FIPS on SLES is two things: **turn on FIPS mode**, and **install + lock the cert
 > SLES 15 **SP7 was submitted for Common Criteria but not for FIPS 140-3**; the FIPS 140-3 modules are
 > validated against **SP6** — but SUSE **publishes those SP6-certified modules for installation on SP7**
 > (SUSE article: "Installing FIPS certified packages on SLES 15 SP6 and SP7"), so the certified path is
-> **SP7 running the SP6-certified modules — no downgrade required.** The FIPS 140-3 certificates cover
-> all four SLE 15 architectures including **aarch64**, so this is a **package-provenance** question, not
-> a service-pack or architecture one. **Verify exact cert numbers + versions on
+> **SP7 running the SP6-certified modules — no *service-pack* downgrade.** (The certified crypto RPMs are
+> themselves LOWER-versioned than the stock SP7 builds, so installing them is a package-level downgrade —
+> `zypper in -f --allow-downgrade` — while the box stays on SP7.) The FIPS 140-3 certificates cover all
+> four SLE 15 architectures including **aarch64**, so this is a **package-provenance** question, not a
+> service-pack or architecture one. **Verify exact cert numbers + versions on
 > `suse.com/support/security/certifications` before any claim.** RKE2 carries FIPS at the Kubernetes
 > crypto layer (the normal Linux/AMD64 artifacts are FIPS-built; there is **no separate `-fips` channel**),
 > and its default **Canal** CNI is the only one rebuilt for FIPS.
+
+### Installing the certified modules — validated recipe (proven on SLES 15 SP7 **aarch64**, Graviton, 2026-08-28)
+
+The certified crypto modules live in the **Certifications Module** (part of the SLES subscription; on SP7
+it must be enabled — it is not on by default). The certified versions are LOWER than the stock SP7 builds
+and both exist in the enabled repos, so a plain `zypper in` pulls the newer UNcertified build — you must
+force the exact certified version. **Re-verify current versions** against the repo before pinning
+(`zypper se -s -r SLE-Module-Certifications-15-SP7-Updates`); these were validated 2026-08-28, identical
+on x86_64 and aarch64:
+
+    SUSEConnect -p sle-module-certifications/15.7/<arch>          # x86_64 | aarch64
+    zypper in -f --oldpackage --allow-downgrade \
+      libopenssl-3-fips-provider=3.1.4-150600.5.15.1 \
+      libopenssl1_1=1.1.1w-150600.5.12.2 \
+      libgcrypt20=1.10.3-150600.3.6.1 libgnutls30=3.8.3-150600.4.6.2 \
+      libhogweed6=3.9.1-150600.3.2.1 libnettle8=3.9.1-150600.3.2.1 \
+      libfreebl3=3.101.2-150400.3.54.1 libsoftokn3=3.101.2-150400.3.54.1 \
+      mozilla-nss=3.101.2-150400.3.54.1
+    zypper addlock libopenssl-3-fips-provider libopenssl1_1 libgcrypt20 libgnutls30 \
+      libhogweed6 libnettle8 libfreebl3 libsoftokn3 mozilla-nss
+    zypper in patterns-base-fips crypto-policies-scripts         # crypto-policies-scripts is NOT auto-pulled
+    fips-mode-setup --enable && reboot
+
+**Confirm after reboot (the evidence artifact):** `fips=1` on `/proc/cmdline`, `/proc/sys/crypto/fips_enabled=1`,
+`fips-mode-setup --check` = enabled, and `openssl list -providers` shows the **fips** provider ACTIVE
+("SUSE Linux Enterprise - OpenSSL FIPS Provider, version 3.1.4 … 150600.5.15.1") — distinct from the stock
+3.2.3 default. Proven arm64: NAS `evidence/fips-certified-arm64-graviton-2026-08-28.txt`. Note: Kernel +
+Kernel-RT crypto modules have **no SP7 FIPS certificate** (SP6 only), so the kernel-crypto claim on SP7 is
+FIPS *mode*, not a certified-module version.
 
 ## RKE2 notes
 
